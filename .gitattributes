@@ -1,0 +1,21 @@
+# Keep shell scripts LF-only: they ship with a shebang and are run directly.
+# A CRLF checkout would break them with "bad interpreter" on Linux/macOS.
+*.sh text eol=lf
+
+# Normalize the rest of the text files, but leave binary artifacts alone.
+*.py   text
+*.js   text
+*.mjs  text
+*.c    text
+*.h    text
+*.md   text
+Makefile text
+Dockerfile text
+
+*.bin  binary
+*.elf  binary
+*.pup  binary
+*.PUP  binary
+*.sprx binary
+*.self binary
+*.img  binary
