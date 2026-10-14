@@ -761,8 +761,13 @@ int hv_defeat_1360_post_resume(void) {
     return -1;
   }
 
-  /* Poll until the action chain stamps the cookie, reporting every fifteenth
-   * poll so the wait is visible rather than a silent stall.
+  /* Poll until the action chain stamps the cookie, reporting every single poll.
+   *
+   * It used to report every fifteenth, which is a line every thirty seconds - and
+   * the console powers off five to ten seconds after the wake when the hook does
+   * not fire, so the second line never arrived. The terminal then looked identical
+   * whether the payload had died at the suspend or come back and was polling,
+   * which is the one question worth answering here.
    *
    * Ten minutes, because enter_rest_mode() only asks the system to suspend and
    * returns immediately: the process carries straight on and starts polling
@@ -774,9 +779,8 @@ int hv_defeat_1360_post_resume(void) {
   for (int i = 0; i < 300 && cookie == 0; i++) {
     cookie = kread64(g_oracle);
     if (cookie == 0) {
-      if ((i % 15) == 0)
-        notify("13.60: post-resume: still no cookie (%d/300, %ds).\n", i + 1,
-               i * 2);
+      notify("13.60: post-resume: still no cookie (%d/300, %ds).\n", i + 1,
+             i * 2);
       sleep(2);
     }
   }
