@@ -59,19 +59,6 @@ void takeover(uint64_t ktext, uint64_t dmap)
   volatile uint8_t *vme = (volatile uint8_t *)(uintptr_t)(dmap + HV_HANDLE_VMEXIT_PA);
 
 
-  /* Bring the MP3 block up the way upstream does before handing over. Done after
-   * the VMEXIT stub is in place but before the rendezvous, while the kernel's
-   * page tables are still loaded - shellcode_hv runs identity-mapped and cannot
-   * call kernel code at all. */
-  {
-    int (*mp3_initialize)(int) =
-        (int (*)(int))(uintptr_t)(ktext + OFF_FUN_MP3_INITIALIZE);
-    mp3_initialize(0);
-  }
-
-  /* Disable the kernel CFI check so the raw function-pointer callbacks pass. */
-  *(volatile uint8_t *)(uintptr_t)(ktext + OFF_KERNEL_CFI_CHECK) = 0xc3;
-
   /* The redirect goes in LAST, immediately before the CPUs are kicked.
    *
    * It used to be written first, before mp3_initialize() and before the CFI patch
