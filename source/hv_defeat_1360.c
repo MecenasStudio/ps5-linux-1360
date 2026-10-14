@@ -26,6 +26,13 @@
 
 #include "config.h"
 #include "hv_defeat_1360.h"
+
+/* The PS5 kernel's own sleep, from libkernel. libc's sleep() is a nanosleep whose
+ * timeout does not survive the S3 resume: the process comes back from the suspend
+ * and never wakes from it, which shows up as a terminal that goes silent at the
+ * moment the console sleeps and never says another word. Byepervisor's payload uses
+ * this one, and it is the only difference in the poll loop between the two. */
+int sceKernelSleep(int secs);
 #include "linux.h"
 #include "loader.h"
 #include "shellcode_hv.h"
@@ -790,7 +797,7 @@ int hv_defeat_1360_post_resume(void) {
 #else
       enter_rest_mode();
 #endif
-      sleep(5);
+      sceKernelSleep(5);
     }
 
     for (int i = 0; i < 30 && cookie == 0; i++) {
@@ -798,7 +805,8 @@ int hv_defeat_1360_post_resume(void) {
       if (cookie == 0) {
         notify("13.60: post-resume: still no cookie (%d/30, %ds), attempt %d.\n",
                i + 1, i * 2, attempt);
-        sleep(2);
+        pin_to_core(HOOK_CORE);
+        sceKernelSleep(2);
       }
     }
   }
