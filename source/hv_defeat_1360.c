@@ -47,6 +47,7 @@ int sceKernelSleep(int secs);
 #include <stdint.h>
 #include <sys/mman.h>
 #include <string.h>
+#include <sys/time.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -786,34 +787,55 @@ int hv_defeat_1360_post_resume(void) {
    * ten seconds later, so the second line never arrived and the terminal looked
    * identical whether the payload had died at the suspend or come back and was
    * polling. */
-  for (int attempt = 1; cookie == 0; attempt++) {
-    if (attempt > 1) {
-      notify("13.60: post-resume: attempt %d - the hook is still armed, asking "
-             "for rest mode again. Wake the console when the light settles.\n",
-             attempt);
-#ifdef MANUAL_SLEEP
-      notify("13.60: MANUAL_SLEEP: put the console to sleep now (PS Button -> "
-             "Power -> Enter Rest Mode).\n");
-#else
-      enter_rest_mode();
-#endif
-      sceKernelSleep(1);
-    }
+  /* One window long enough for the console to actually suspend - it takes about
+   * fourteen seconds from the request - and a wall-clock check to notice when we
+   * come back.
+   *
+   * Re-asking for a suspend every few seconds was measured to be fatal: the console
+   * never gets to sleep because the request keeps restarting the countdown, and the
+   * platform eventually cuts the power with the payload still polling. But waiting a
+   * full minute after a wake is just as wrong the other way, because a wake in which
+   * the hook did not fire is followed by the power going off five to ten seconds
+   * later - so the next attempt never starts.
+   *
+   * The clock is what separates the two cases. A suspend and resume makes the wall
+   * clock jump by far more than the one second this loop sleeps for, so a jump means
+   * we are back and the request should go out immediately; no jump means we are
+   * still awake and waiting for the console to go down, and the request should not
+   * be repeated. */
+  {
+    struct timeval prev, now;
+    long long elapsed;
 
-    /* Short window, then ask again. The platform cuts the power five to ten
-     * seconds after a wake in which the hook did not fire, so a long wait is a
-     * wait that never finishes: the console is gone before the next attempt
-     * starts. Asking for another suspend straight away is also the one thing that
-     * might cancel whatever timer the EC is running down, which is worth more than
-     * a longer poll. */
-    for (int i = 0; i < 8 && cookie == 0; i++) {
-      cookie = kread64(g_oracle);
-      if (cookie == 0) {
-        notify("13.60: post-resume: still no cookie (%d/8, %ds), attempt %d.\n",
-               i + 1, i, attempt);
-        pin_to_core(HOOK_CORE);
-        sceKernelSleep(1);
+    gettimeofday(&prev, NULL);
+
+    for (int attempt = 1; cookie == 0; attempt++) {
+      for (int i = 0; i < 60 && cookie == 0; i++) {
+        gettimeofday(&now, NULL);
+        elapsed = (long long)(now.tv_sec - prev.tv_sec);
+        prev = now;
+
+        if (elapsed > 5 && attempt > 1) {
+          notify("13.60: post-resume: back from a suspend (clock jumped %llds) - "
+                 "asking for rest mode again.\n", elapsed);
+#ifdef MANUAL_SLEEP
+          notify("13.60: MANUAL_SLEEP: put the console to sleep now (PS Button -> "
+                 "Power -> Enter Rest Mode).\n");
+#else
+          enter_rest_mode();
+#endif
+        }
+
+        cookie = kread64(g_oracle);
+        if (cookie == 0) {
+          notify("13.60: post-resume: still no cookie (%d/60, %ds), attempt %d.\n",
+                 i + 1, i, attempt);
+          pin_to_core(HOOK_CORE);
+          sceKernelSleep(1);
+        }
       }
+      if (cookie == 0)
+        notify("13.60: post-resume: attempt %d done, still armed.\n", attempt);
     }
   }
 
