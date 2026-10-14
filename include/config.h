@@ -33,10 +33,13 @@
   "root=/dev/sda2 rw rootwait console=ttyTitania0 console=tty0 "               \
   "video=DP-1:1920x1080@60 mitigations=off idle=halt pci=pcie_bus_perf"
 
-// Multi-core launch: shellcode_hv waits for all 16 logical CPUs, which are
-// brought into the HV via the kernel's own smp_rendezvous() (see the takeover
-// blob). Linux boots with full SMP.
-#define HV_HEADLESS_SINGLE_CORE 1
+// Multi-core launch. shellcode_hv waits for all 16 logical CPUs, which break_hv
+// and the takeover's smp_rendezvous() bring into the HV, and Linux boots with full
+// SMP. Setting this to 1 would do the opposite twice over: skip the wait, so the
+// BSP enters Linux while other cores are still in the PS5's kernel, and append
+// " maxcpus=1 nosmp" so Linux never brings its own CPUs up either. Both were
+// measured to end with the console powering off right after the handover.
+#define HV_HEADLESS_SINGLE_CORE 0
 
 #define DEBUG 0 // Toggle to 0 to disable logs
 
