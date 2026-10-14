@@ -78,7 +78,21 @@ offset_list off_1360 = {
     .KERNEL_SYM_DATA_CAVE = 0x2D39000,              /* BYEP */
     .HV_SYM_HEAP_BASE = 0x83028,      /* BYEP */
     .HV_SYM_PCPUS = 0x82A60,          /* BYEP */
-    .HV_LOADER_PA_REGULAR = 0x062800000,  /* BYEP */
+    /* The hypervisor's loader base. Held 0x062800000 (24.6 GiB) until now, which is
+     * what Byepervisor's table carries and what the e820 map in boot_linux.c
+     * reserves, and it cannot be right on 13.60: the two addresses below that were
+     * measured on this console - HV_CODE_CAVE_PA and HV_HANDLE_VMEXIT_PA, both at
+     * 0x628xxxxx - would then lie sixteen times below their own base. One value is
+     * missing a zero, and it is this one.
+     *
+     * It matters because hv_base_pa() feeds hv_base + HV_SYM_HEAP_BASE and
+     * hv_base + HV_SYM_PCPUS into the khook's action chain: sixteen times too high
+     * puts the hypervisor's heap and per-CPU pointers into whatever lives at 24.6
+     * GiB, which is not the hypervisor. The escape still fires, because the VMEXIT
+     * patch uses the absolute addresses above, but the hypervisor's own state is
+     * left inconsistent - and the handover dies right after the takeover, every
+     * time, in the log's fifteen out of fifteen. */
+    .HV_LOADER_PA_REGULAR = 0x62800000,   /* HW: 16x below the BYEP value; see above */
     .HV_LOADER_PA_PRO = 0x8e0800000,      /* BYEP */
     .GAD_POP_R8 = 0xB8CA6D,           /* BYEP: pop r8 ; ret */
     .GAD_STORE_RCX_R8 = 0x474389,     /* BYEP: mov [rcx], r8 ; ret */
