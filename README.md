@@ -13,27 +13,57 @@ but has not been tried. The **Pro** is not supported: it loads its hypervisor at
 ## Where it stands
 
 ```
-escape the hypervisor                    works
-stage the Linux images in the cave       works, verified byte for byte
-start the kernel                         works
-initramfs runs                           works
-wait for the root filesystem             fails - not found, platform powers off
+arm the hypervisor hook                  works
+resume, kernel hook fires, cookie        works
+stage both Linux images in the cave      works, verified byte for byte
+check the identity map and the dmap      works, every entry checked
+install the VMEXIT redirect              lands where it is written
+hand the machine to shellcode_hv         FAILS - platform powers off
 ```
 
-**The remaining fault is the root filesystem.** The command line asks for
-`root=LABEL=ubuntu2604`, and the initramfs spends about ninety seconds looking for
-it before the platform cuts the power. Either the stick does not carry that label,
-or its partitions are not in the order the image expects - this one has the Linux
-filesystem on `sda1` and the EFI partition on `sda2`. If the root mounts, the boot
-stops timing out and the console stays up.
+**It has never been observed to start Linux.** An earlier version of this file said
+it reached the initramfs and spent ninety seconds looking for the root filesystem.
+That was wrong: the two runs that lived that long are in the payload's own log as
+`still no cookie (46/300, 90s)`, meaning the hook had not fired and the payload was
+simply polling. There was no kernel and no root filesystem - only a console that had
+not powered itself off yet.
 
-**The screen stays black even that far in.** The reference boot path makes four
-display calls before starting the kernel and this path has to make them itself. Two
-are in place: the VBIOS copied to `0xC0000` and `mp3_initialize(0)`, which is what
-took the console from dying after five seconds to surviving ninety. The other two
-need `FUN_TRANSMITTER_CONTROL` (the DP link) and `FUN_MP3_INVOKE` (HDCP and output),
-and neither offset is known for 13.60. Until the DP link is there, `console=tty0`
-has nowhere to draw.
+**The fault is in the handoff, and it is deterministic.** Of seventy-nine runs in that
+log, fifteen reached `takeover armed; firing getuid() -> shellcode_hv` after streaming
+and verifying both images - and the console powered off in all fifteen, always in the
+same place. It is not `shellcode_hv`: replacing it in the cave with four bytes of
+`cli; hlt` changes nothing, so the platform is gone before that code runs.
+
+**What is known about it.** The takeover writes a stub over the hypervisor's VMEXIT
+dispatcher, and that dispatcher belongs to the whole machine, not to the one core
+that issued the VMMCALL. The other cores are still running the PS5 and issuing
+hypercalls continuously, so they land in the stub too - which is why one core kicked
+or sixteen makes no difference, why writing the stub later makes no difference, and
+why the redirect now delegates instead: the entry is moved by rewriting the host RIP
+in the state save area named by `VM_HSAVE_PA`, and everything except our own
+hypercall goes to the untouched dispatcher. That is the current state of the code, and
+it is as far as the evidence goes. The next measurement needs a console.
+
+**There is no console anywhere on this path.** `shellcode_hv` prints to the UART at
+`0xc1010104`, which is the same port the kernel command line already names as
+`console=ttyTitania0`, and nothing else in the handoff can report anything: the
+payload's log stops at the point control leaves it, the PS5's kernel log stops at
+suspend, and `tty0` needs a framebuffer that the missing display bring-up never
+creates. A USB-TTL adapter on the console's UART pins would show, in one run, whether
+`shellcode_hv` is reached and where it stops - and after that the entire kernel log.
+Everything else on this path is already verified and needs no further blind attempts.
+
+## What is not known
+
+- **`FUN_TRANSMITTER_CONTROL` and `FUN_MP3_INVOKE`.** The reference boot path makes
+  four bring-up calls before the kernel; this one has `mp3_initialize` and the VBIOS
+  copy, which is two. Those two offsets are in no dump, no SDK and no public table for
+  13.60, and until the DP link is up `console=tty0` has nowhere to draw. `G_VBIOS` and
+  `FUN_MP3_INITIALIZE` are known.
+- **Whether the MP3 call is what keeps the platform alive.** The runs in which
+  `mp3_initialize(0)` ran are the only ones that survived more than a few seconds.
+  That is correlation across a handful of runs, not a measurement, and it is why the
+  call is back in the blob.
 
 ## Building
 

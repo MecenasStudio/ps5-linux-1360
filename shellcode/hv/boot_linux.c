@@ -172,18 +172,6 @@ void entry(void) {
     }
   }
 
-  /* BISECTION PARK - temporary.
-   *
-   * Everything before this point is the handoff itself: the VMEXIT stub, the CR3
-   * switch, sixteen CPUs landing in shellcode_hv, their stacks, and the bounded
-   * wait for all of them. Nothing after it has run yet.
-   *
-   * If the console hangs here instead of powering off, all of that is sound and
-   * the fault is in the IOMMU disable, configure_vram or boot_linux() below. If it
-   * powers off here, the fault is in the handoff and none of the code below has
-   * anything to do with it. */
-  for (;;)
-    halt();
 
   // Disable IOMMU.
   *(volatile uint64_t *)(AMDIOMMU_MMIO_BASE + AMDIOMMU_CTRL) &= ~1;
@@ -191,17 +179,6 @@ void entry(void) {
   memcpy(&info, (void *)(cave_linux_info), sizeof(struct linux_info));
 
   configure_vram(FB_BASE, VRAM_BASE, info.vram_size);
-
-  /* The VBIOS copy to 0xC0000 that used to be here is gone.
-   *
-   * It was added to give the display something to work with, and it was left in
-   * for a while because it did not obviously hurt. It is the only difference
-   * between this file and ps5-linux-loader's - main.c, utils.c and both headers
-   * are byte-identical - and the log says the takeover has fired fifteen times
-   * and the console has died fifteen times, always at this point. So it is the
-   * only thing on the BSP's path that upstream does not do, and it writes 64 KB
-   * over physical 0xC0000 in a machine that is still running the PS5's kernel
-   * until the jump below. */
 
   printf("[*] Booting Linux in bare metal...\n");
   boot_linux();

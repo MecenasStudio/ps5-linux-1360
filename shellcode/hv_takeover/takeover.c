@@ -82,6 +82,25 @@ void takeover(uint64_t ktext, uint64_t dmap)
    * The stub has to live in the hypervisor's memory and not in the cave at 4 GiB,
    * because it runs before the CR3 switch: HV_CODE_CAVE_PA is four kilobytes of
    * 0xCC inside the hypervisor's own image, which is what it is for. */
+  /* Bring the MP3 block up the way upstream does, before anything is redirected.
+   *
+   * This runs while the hypervisor and the kernel are both still intact, which is
+   * the only context in which a kernel function can be called at all - shellcode_hv
+   * runs identity-mapped and cannot reach kernel code. The same call made from the
+   * getuid hook's context earlier in this port froze the console, so it is
+   * deliberately placed here and not later.
+   *
+   * Its purpose is the platform's own watchdog: mp3_initialize is the one call of
+   * the four upstream makes whose offset this port has, and the runs in which it ran
+   * are the only ones that ever survived more than a few seconds. That is
+   * correlation, not proof - FUN_TRANSMITTER_CONTROL and FUN_MP3_INVOKE are still
+   * unknown for 13.60, and the other three calls may matter as much or more. */
+  {
+    int (*mp3_initialize)(int) =
+        (int (*)(int))(uintptr_t)(ktext + OFF_FUN_MP3_INITIALIZE);
+    mp3_initialize(0);
+  }
+
   /* Redirect the VMEXIT entry by editing the host state save area, not the code.
    *
    * The dispatcher cannot be patched in place and cannot be copied: its first

