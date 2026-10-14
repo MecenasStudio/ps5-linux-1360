@@ -33,13 +33,16 @@
   "root=/dev/sda2 rw rootwait console=ttyTitania0 console=tty0 "               \
   "video=DP-1:1920x1080@60 mitigations=off idle=halt pci=pcie_bus_perf"
 
-// Multi-core launch. shellcode_hv waits for all 16 logical CPUs, which break_hv
-// and the takeover's smp_rendezvous() bring into the HV, and Linux boots with full
-// SMP. Setting this to 1 would do the opposite twice over: skip the wait, so the
-// BSP enters Linux while other cores are still in the PS5's kernel, and append
-// " maxcpus=1 nosmp" so Linux never brings its own CPUs up either. Both were
-// measured to end with the console powering off right after the handover.
-#define HV_HEADLESS_SINGLE_CORE 0
+// Single-core launch. One VMMCALL takes one core out of the PS5's kernel and into
+// shellcode_hv, and Linux comes up on that core alone with " maxcpus=1 nosmp". The
+// other fifteen keep running the PS5, which is deliberate: they are what the
+// platform's EC is watching, and a system with no running kernel at all is one it
+// powers off.
+//
+// Hence both effects of this flag are wanted: shellcode_hv must not wait for CPUs
+// that are never coming (it would hang), and Linux must not try to bring up APs
+// that are still inside the hypervisor.
+#define HV_HEADLESS_SINGLE_CORE 1
 
 #define DEBUG 0 // Toggle to 0 to disable logs
 

