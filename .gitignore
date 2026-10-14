@@ -5,10 +5,13 @@
 bin/
 dist/
 
-# Generated shellcode headers (produced by the shellcode Makefiles, which the
-# top-level build runs first because the payload includes them)
-shellcode_*/*.h
-!shellcode_*/**/*.h
+# Generated shellcode headers. bin2c.py turns each blob into a C array, and the
+# shellcode Makefiles write the result next to it; the payload includes them, and the
+# top-level build runs the shellcode first so they always exist by then. Only these
+# two are generated - boot_linux.h, utils.h, shellcode_hv_args.h and break_hv.h are
+# written by hand.
+shellcode/hv/shellcode_hv.h
+shellcode/hv_takeover/takeover.h
 
 # macOS
 .DS_Store

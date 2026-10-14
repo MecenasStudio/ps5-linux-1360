@@ -2,20 +2,14 @@
 # A CRLF checkout would break them with "bad interpreter" on Linux/macOS.
 *.sh text eol=lf
 
-# Normalize the rest of the text files, but leave binary artifacts alone.
-*.py   text
-*.js   text
-*.mjs  text
-*.c    text
-*.h    text
-*.md   text
+# Normalise the sources. Everything else in the tree is either binary or does not
+# need a rule.
+*.py     text
+*.c      text
+*.h      text
+*.md     text
+*.S      text
 Makefile text
-Dockerfile text
 
-*.bin  binary
-*.elf  binary
-*.pup  binary
-*.PUP  binary
-*.sprx binary
-*.self binary
-*.img  binary
+*.bin binary
+*.elf binary
