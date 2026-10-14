@@ -149,22 +149,22 @@ void entry(void) {
 
   atomic_add_32(&exited_cpus, 1);
 
+#if !HV_HEADLESS_SINGLE_CORE
   /* Wait for the other CPUs, but not for ever.
    *
-   * Upstream waits for all MAXCPU cores with no bound at all, and that is right
-   * when every one of them arrives: break_hv clears NP_ENABLE on all sixteen
-   * VMCBs and the takeover kicks every CPU into a raw VMMCALL, so they should all
-   * land here. Skipping the wait instead - which is what this file used to do -
-   * lets the BSP jump into Linux while other cores are still running the PS5's
-   * kernel with the hypervisor still able to intercept them.
+   * Only in the multi-core configuration, where the takeover kicks every CPU and
+   * they all arrive here. In the single-core one only this CPU ever comes, so
+   * waiting - bounded or not - is waiting for something that will not happen.
    *
-   * An unbounded wait is still the wrong answer, because "one CPU did not make it"
-   * then means a console that hangs rather than one that boots. So: wait for the
-   * rest, give up after a while, and go on regardless. */
+   * Upstream waits for all MAXCPU cores with no bound at all, which is right when
+   * they all arrive and wrong when one does not: that turns "a CPU did not make it"
+   * into a console that hangs rather than one that boots. This gives up after a
+   * while and goes on regardless. */
   for (volatile uint64_t spins = 0; spins < 2000000000ULL; spins++) {
     if (exited_cpus >= MAXCPU)
       break;
   }
+#endif
 
   if (get_cpu() != 0) {
     while (1) {
