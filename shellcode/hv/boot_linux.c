@@ -169,11 +169,16 @@ void entry(void) {
 
   configure_vram(FB_BASE, VRAM_BASE, info.vram_size);
 
-  /* Put the GPU's VBIOS where the kernel looks for it. Upstream does this in
-   * the reference bring-up, which this path never runs, so without it the
-   * display is never brought up at all. */
-  if (info.vbios && info.vbios_size)
-    memcpy((void *)0xC0000, (void *)info.vbios, info.vbios_size);
+  /* The VBIOS copy to 0xC0000 that used to be here is gone.
+   *
+   * It was added to give the display something to work with, and it was left in
+   * for a while because it did not obviously hurt. It is the only difference
+   * between this file and ps5-linux-loader's - main.c, utils.c and both headers
+   * are byte-identical - and the log says the takeover has fired fifteen times
+   * and the console has died fifteen times, always at this point. So it is the
+   * only thing on the BSP's path that upstream does not do, and it writes 64 KB
+   * over physical 0xC0000 in a machine that is still running the PS5's kernel
+   * until the jump below. */
 
   printf("[*] Booting Linux in bare metal...\n");
   boot_linux();
