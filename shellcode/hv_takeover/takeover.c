@@ -58,22 +58,6 @@ void takeover(uint64_t ktext, uint64_t dmap)
 {
   volatile uint8_t *vme = (volatile uint8_t *)(uintptr_t)(dmap + HV_HANDLE_VMEXIT_PA);
 
-  /* movabs rax, CAVE_HV_PAGING ; mov cr3, rax ; movabs rax, CAVE_HV_CODE ; jmp rax */
-  uint8_t stub[25];
-  stub[0]  = 0x48;
-  stub[1]  = 0xb8;
-  *(uint64_t *)(void *)&stub[2]  = CAVE_HV_PAGING;
-  stub[10] = 0x0f;
-  stub[11] = 0x22;
-  stub[12] = 0xd8;
-  stub[13] = 0x48;
-  stub[14] = 0xb8;
-  *(uint64_t *)(void *)&stub[15] = CAVE_HV_CODE;
-  stub[23] = 0xff;
-  stub[24] = 0xe0;
-
-  for (int i = 0; i < 25; i++)
-    vme[i] = stub[i];
 
   /* Bring the MP3 block up the way upstream does before handing over. Done after
    * the VMEXIT stub is in place but before the rendezvous, while the kernel's
@@ -87,6 +71,38 @@ void takeover(uint64_t ktext, uint64_t dmap)
 
   /* Disable the kernel CFI check so the raw function-pointer callbacks pass. */
   *(volatile uint8_t *)(uintptr_t)(ktext + OFF_KERNEL_CFI_CHECK) = 0xc3;
+
+  /* The redirect goes in LAST, immediately before the CPUs are kicked.
+   *
+   * It used to be written first, before mp3_initialize() and before the CFI patch
+   * and before smp_rendezvous() itself - and everything after it runs on a live
+   * PS5 kernel that issues hypercalls constantly. Every one of those VMMCALLs then
+   * lands in shellcode_hv instead of the hypervisor, so one CPU switches CR3,
+   * clears the MTRRs, disables SVM and starts booting Linux while the other fifteen
+   * are still running the PS5. That machine is dead before the rendezvous even
+   * starts, which is exactly what the log shows: a deterministic power-off right
+   * after "takeover armed", with no further output, every single time.
+   *
+   * Nothing may run between this write and the kick. */
+  {
+    volatile uint8_t *vme =
+        (volatile uint8_t *)(uintptr_t)(dmap + HV_HANDLE_VMEXIT_PA);
+    uint8_t stub[25];
+    stub[0]  = 0x48;
+    stub[1]  = 0xb8;
+    *(uint64_t *)(void *)&stub[2]  = CAVE_HV_PAGING;
+    stub[10] = 0x0f;
+    stub[11] = 0x22;
+    stub[12] = 0xd8;
+    stub[13] = 0x48;
+    stub[14] = 0xb8;
+    *(uint64_t *)(void *)&stub[15] = CAVE_HV_CODE;
+    stub[23] = 0xff;
+    stub[24] = 0xe0;
+
+    for (int i = 0; i < 25; i++)
+      vme[i] = stub[i];
+  }
 
   /* Kick every CPU into a raw VMMCALL; each VMEXIT lands in shellcode_hv. */
   void (*smp_rendezvous)(void *, void *, void *, void *) =

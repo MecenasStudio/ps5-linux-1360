@@ -172,6 +172,19 @@ void entry(void) {
     }
   }
 
+  /* BISECTION PARK - temporary.
+   *
+   * Everything before this point is the handoff itself: the VMEXIT stub, the CR3
+   * switch, sixteen CPUs landing in shellcode_hv, their stacks, and the bounded
+   * wait for all of them. Nothing after it has run yet.
+   *
+   * If the console hangs here instead of powering off, all of that is sound and
+   * the fault is in the IOMMU disable, configure_vram or boot_linux() below. If it
+   * powers off here, the fault is in the handoff and none of the code below has
+   * anything to do with it. */
+  for (;;)
+    halt();
+
   // Disable IOMMU.
   *(volatile uint64_t *)(AMDIOMMU_MMIO_BASE + AMDIOMMU_CTRL) &= ~1;
 

