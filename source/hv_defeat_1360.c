@@ -797,16 +797,22 @@ int hv_defeat_1360_post_resume(void) {
 #else
       enter_rest_mode();
 #endif
-      sceKernelSleep(5);
+      sceKernelSleep(1);
     }
 
-    for (int i = 0; i < 30 && cookie == 0; i++) {
+    /* Short window, then ask again. The platform cuts the power five to ten
+     * seconds after a wake in which the hook did not fire, so a long wait is a
+     * wait that never finishes: the console is gone before the next attempt
+     * starts. Asking for another suspend straight away is also the one thing that
+     * might cancel whatever timer the EC is running down, which is worth more than
+     * a longer poll. */
+    for (int i = 0; i < 8 && cookie == 0; i++) {
       cookie = kread64(g_oracle);
       if (cookie == 0) {
-        notify("13.60: post-resume: still no cookie (%d/30, %ds), attempt %d.\n",
-               i + 1, i * 2, attempt);
+        notify("13.60: post-resume: still no cookie (%d/8, %ds), attempt %d.\n",
+               i + 1, i, attempt);
         pin_to_core(HOOK_CORE);
-        sceKernelSleep(2);
+        sceKernelSleep(1);
       }
     }
   }
