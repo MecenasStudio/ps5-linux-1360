@@ -946,7 +946,16 @@ int hv_defeat_1360(void) {
   kernel_pmap = kdlsym(KERNEL_SYM_PMAP_STORE);
 
   if (kread64(cave_addr + CAVE_STATE_OFF) == STATE_ARMED) {
-    notify("13.60: hook already armed (state survived).\n");
+    /* The cave lives in RAM and S3 is suspend-to-RAM, so an armed hook survives a
+     * rest-mode cycle and this process can be started again into a state that is
+     * already set up. Rebuild the runtime state the rest of the flow reads - the
+     * oracle the poll watches and the address the AP payload is copied from - or
+     * post_resume() reports "vector was never armed" and does nothing, which is a
+     * silent failure rather than a safe one. */
+    notify("13.60: hook already armed (state survived); reusing the staged cave.\n");
+    g_oracle = kdlsym(KERNEL_SYM_DATA_CAVE) + KH_OFF_USER;
+    g_payload_va = kdldmap(STARTUP_MP_PAYLOAD_PAGE);
+    g_armed = 1;
     return 0;
   }
 
