@@ -382,7 +382,20 @@ static int stage_hv_boot(void) {
 
   /* Identity map + the shellcode_hv blob it will jump into. */
   stage_identity_map();
-  kwrite(pa_to_dmap(cave_hv_code), shellcode_hv_bin, shellcode_hv_bin_len);
+
+  /* BISECTION: a park blob instead of shellcode_hv.
+   *
+   * Four bytes - cli; hlt; jmp -3 - so the one core the takeover takes out stops
+   * dead and touches nothing else. If the console still powers off with this in the
+   * cave, the fault is in the redirect itself: the stub, the CR3 switch or the
+   * VMMCALL. shellcode_hv then has nothing to do with it and rewriting it is a
+   * waste of time. If the console survives, shellcode_hv is where it dies. */
+  {
+    static const uint8_t park_blob[4] = {0xfa, 0xf4, 0xeb, 0xfd};
+    kwrite(pa_to_dmap(cave_hv_code), (void *)park_blob, sizeof(park_blob));
+  }
+  if (0)
+    kwrite(pa_to_dmap(cave_hv_code), shellcode_hv_bin, shellcode_hv_bin_len);
 
   /* Build the linux_info the HV shellcode reads from cave_linux_info, with the
    * kernel/initrd relocated to identity-mapped physical addresses. */
